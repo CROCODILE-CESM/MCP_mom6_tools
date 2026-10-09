@@ -1,0 +1,16 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mom6-tools-mcp"
+version = "0.1.0"
+description = "MCP server for visualising and debugging regional MOM6 output with mom6-tools"
+requires-python = ">=3.11"
+dependencies = ["fastmcp>=2.0"]
+
+[project.scripts]
+mom6-tools-mcp = "mom6_tools_mcp.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["mom6_tools_mcp"]
