@@ -161,6 +161,28 @@ def mom6_files(d: str | os.PathLike, casename: str | None = None) -> list[str]:
     return sorted(glob.glob(os.path.join(glob.escape(d), pat)))
 
 
+STREAM_RE = re.compile(
+    r"^(?P<case>.+?)\.mom6\.(?P<stream>.+?)"
+    r"(?:[._](?P<date>\d{4}(?:-\d{2}){0,2}(?:-\d{5})?))?\.nc$"
+)
+GRID_STREAMS = ("static", "ocean_geometry")
+
+
+def history_streams(d: str | os.PathLike, casename: str | None = None) -> set[str]:
+    """Stream names in d ("h." prefix stripped; restart and ic files left out)."""
+    out = set()
+    for f in mom6_files(d, casename):
+        m = STREAM_RE.match(os.path.basename(f))
+        if m and not re.match(r"(r|ic)(\.|$)", m["stream"]):
+            out.add(m["stream"].removeprefix("h."))
+    return out
+
+
+def is_history_dir(streams) -> bool:
+    """The static file plus at least one stream that is not a grid file."""
+    return "static" in streams and any(s not in GRID_STREAMS for s in streams)
+
+
 def infer_casename(hist_dir: str | os.PathLike) -> str:
     """The case name, when exactly one case's *.mom6.* files are in the directory."""
     names = {os.path.basename(f).split(".mom6.")[0] for f in mom6_files(hist_dir)}
@@ -175,20 +197,37 @@ def resolve_hist(hist_dir: str | None = None, casename: str | None = None, caser
     """(hist_dir, casename, case_info|None) from whatever the caller gave.
 
     With a caseroot: the short-term archive ocn/hist if it holds MOM6 history,
-    else RUNDIR.
+    else RUNDIR. A directory counts only if it has the static file plus at
+    least one other history stream (ocean_geometry/static alone do not), the
+    same rule as find_mom6_output's hist_dir_for_tools.
     """
     info = None
     if caseroot:
         info = case_info(caseroot)
         casename = casename or info.get("CASE")
         if not hist_dir:
-            for cand in (info.get("archive_hist_dir"), info.get("RUNDIR")):
-                if cand and any(".mom6.h." in os.path.basename(f) for f in mom6_files(cand, casename)):
+            seen = []
+            for label, cand in (
+                ("archive", info.get("archive_hist_dir")),
+                ("RUNDIR", info.get("RUNDIR")),
+            ):
+                if not cand:
+                    continue
+                streams = history_streams(cand, casename)
+                if is_history_dir(streams):
                     hist_dir = cand
                     break
+                if not os.path.isdir(cand):
+                    has = "does not exist"
+                else:
+                    has = ", ".join(sorted(streams)) or "no MOM6 history files"
+                seen.append(f"{label} {cand}: {has}")
             else:
                 raise FileNotFoundError(
-                    f"no MOM6 history for {casename} in archive ({info.get('archive_hist_dir')}) or RUNDIR ({info.get('RUNDIR')})")
+                    f"no MOM6 history for {casename} ({'; '.join(seen)}). A history "
+                    "dir needs <case>.mom6.h.static.nc plus at least one history "
+                    "stream (e.g. sfc); has the run written output yet?"
+                )
     if not hist_dir:
         raise ValueError("give hist_dir (or caseroot)")
     hist_dir = str(Path(hist_dir).expanduser())

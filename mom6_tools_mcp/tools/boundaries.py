@@ -37,6 +37,15 @@ def obc_summary(input_dir: str | None = None, plot: bool = False, out_dir: str |
     value is expected, and physical-range flags.  Stats use at most `max_times`
     evenly spaced records.  plot=True writes a segment map over bathymetry and a
     per-segment temp/salt/normal-velocity/eta section PNG to `out_dir`.
+
+    Result flags: `problems` lists what is wrong with the OBC data.
+    `failed_segments` lists segments whose checks could not fully run, each as
+    {segment, file, stage, error, skipped}: stage "open_obc" (file unreadable,
+    nothing checked), "on_boundary" (segment not matched to a topog row/column,
+    e.g. on a rotated grid) or "topog" (no ocean_topog*.nc); for the last two
+    the floor checks are skipped and the value ranges cover every level.
+    `ok` is True only when every segment was fully checked and `problems` is
+    empty, so a partial failure gives ok=False even with no problems.
     """
     try:
         input_dir = _input_dir(input_dir, caseroot)

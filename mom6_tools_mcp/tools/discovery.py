@@ -14,16 +14,17 @@ import re
 from pathlib import Path
 
 from ._common import (
+    STREAM_RE,
     case_info,
     caseroot_from_rundir,
     err,
+    is_history_dir,
     mom6_files,
     mom_calendar,
     obc_dir_of,
     run_worker,
 )
 
-_STREAM_RE = re.compile(r"^(?P<case>.+?)\.mom6\.(?P<stream>.+?)(?:[._](?P<date>\d{4}(?:-\d{2}){0,2}(?:-\d{5})?))?\.nc$")
 MAX_SERIES = 200
 
 
@@ -33,7 +34,7 @@ def _scan(d: str, casename: str | None) -> dict:
     restarts, ics = [], []
     for f in mom6_files(d, casename):
         b = os.path.basename(f)
-        m = _STREAM_RE.match(b)
+        m = STREAM_RE.match(b)
         if not m:
             continue
         s, date = m["stream"], m["date"]
@@ -130,7 +131,7 @@ def find_mom6_output(caseroot: str | None = None, rundir: str | None = None, arc
         sc["has_static"] = "static" in sc["streams"]
         sc["has_ocean_geometry"] = "ocean_geometry" in sc["streams"] or os.path.exists(os.path.join(d, "ocean_geometry.nc"))
         out["locations"][label] = sc
-        if best is None and sc["has_static"] and any(s not in ("static", "ocean_geometry") for s in sc["streams"]):
+        if best is None and is_history_dir(sc["streams"]):
             best = d
     out["hist_dir_for_tools"] = best
     if best is None:

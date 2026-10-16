@@ -111,7 +111,9 @@ def plot_field(hist_dir: str | None = None, casename: str | None = None, var: st
     `level`: for 3-D fields, an int = level index, a float = nearest depth in m
     on the z stream (default: top level).  Land is masked with the static wet
     masks; fill values (1e20 / 9.97e36) are blanked.  Colour range is the 2-98%
-    percentile (symmetric for velocities/vorticity).
+    percentile (symmetric for velocities/vorticity).  A field that is entirely
+    NaN/fill (e.g. a monthly native/z file from a run that stopped mid-month)
+    is not drawn: `png` (or `gif`) is None, `n_valid` is 0 and `notes` says why.
     `animate=True`: a GIF over all records (subsampled to <= 60 frames) using
     mom6_tools save_field_gif (cartopy) or save_gif.
 

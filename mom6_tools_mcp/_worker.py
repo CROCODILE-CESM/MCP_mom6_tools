@@ -983,6 +983,15 @@ def op_plot_field(a):
         idx = _downsample_idx(nt, GIF_MAX_FRAMES)
         field = da.isel(time=idx).load()
         field = field.assign_coords(geolon=(lon.dims, unwrap_lon(lon.values)), geolat=lat.reset_coords(drop=True))
+        if not np.isfinite(np.asarray(field, float)).any():
+            notes.append(
+                "field entirely NaN/fill in every record (partial-month native/z file "
+                "averages are written as fill until the month completes, or a blow-up)"
+                " -- no GIF written"
+            )
+            out.update({"gif": None, "frames": 0, "records_available": int(nt)})
+            out["notes"] = sorted(set(notes))
+            return out
         gif = _out_path(out_dir, f"{_safe_name(casename)}_{_safe_name(name)}_{stream}.gif")
         method = _make_gif(field, gif, label, cmap, center, notes)
         out.update({"gif": gif, "frames": int(len(idx)), "records_available": int(nt), "gif_method": method,
@@ -1001,7 +1010,14 @@ def op_plot_field(a):
     out["mean_unweighted"] = _f(np.nanmean(vals)) if fin.any() else None
     out["n_valid"] = int(fin.sum())
     if not fin.any():
-        notes.append("field is entirely NaN/fill at this time (partial-month native/z file, or blow-up)")
+        notes.append(
+            "field entirely NaN/fill at this time (partial-month native/z file "
+            "averages are written as fill until the month completes, or a blow-up)"
+            " -- no PNG written"
+        )
+        out["png"] = None
+        out["notes"] = sorted(set(notes))
+        return out
     if derived == "vorticity" and "Coriolis" in static and fin.any():
         ro = np.asarray(abs(da2 / static["Coriolis"].where(abs(static["Coriolis"]) > 0)), float)
         out["max_abs_zeta_over_f"] = _f(np.nanmax(ro))
@@ -1193,7 +1209,24 @@ def open_topog(d):
     return t.rename(ren), hits[0]
 
 
-def _segments(input_dir, notes):
+FLOOR_CHECKS = "floor-depth check, below-floor masking, NaN-above-floor count"
+
+
+def _failed_segment(path, stage, error, skipped=FLOOR_CHECKS, sid=None):
+    """One entry of obc_summary's failed_segments."""
+    if sid is None:
+        m = re.search(r"segment_(\d+)\.nc$", path)
+        sid = m.group(1) if m else os.path.basename(path)
+    return {
+        "segment": sid,
+        "file": os.path.basename(path),
+        "stage": stage,
+        "error": error,
+        "skipped": skipped,
+    }
+
+
+def _segments(input_dir, notes, failed=None):
     tb = _tb()
     d = obc_dir(input_dir)
     segs = {}
@@ -1203,6 +1236,9 @@ def _segments(input_dir, notes):
             segs[seg.attrs["segment"]] = (seg, path)
         except Exception as e:
             notes.append(f"{os.path.basename(path)}: could not open with open_obc ({type(e).__name__}: {e})")
+            if failed is not None:
+                err = f"{type(e).__name__}: {e}"
+                failed.append(_failed_segment(path, "open_obc", err, "all checks"))
     return d, segs
 
 
@@ -1211,8 +1247,8 @@ def op_obc_summary(a):
 
     np = _np()
     tb = _tb()
-    notes, problems = [], []
-    d, segs = _segments(a["input_dir"], notes)
+    notes, problems, failed = [], [], []
+    d, segs = _segments(a["input_dir"], notes, failed)
     topog, tpath = open_topog(d)
     if topog is None:
         notes.append("no ocean_topog*.nc beside the OBC files: depth-vs-floor checks skipped")
@@ -1254,6 +1290,11 @@ def op_obc_summary(a):
                                     f"sea floor reaches {info['floor_max']} m -- bottom cells get extrapolated values")
             except Exception as e:
                 notes.append(f"segment {sid}: on_boundary failed ({e}); depth-vs-floor skipped")
+                err = f"{type(e).__name__}: {e}"
+                failed.append(_failed_segment(path, "on_boundary", err, sid=sid))
+        else:
+            err = "no ocean_topog*.nc beside the OBC files"
+            failed.append(_failed_segment(path, "topog", err, sid=sid))
         if floor is not None:
             m = tb.mask_below_floor(s, floor)
             info["kept_fraction_after_floor_mask"] = _f(m["temp"].notnull().mean(), 4)
@@ -1342,7 +1383,10 @@ def op_obc_summary(a):
             pngs.append(p)
         out["pngs"] = pngs
     out["problems"] = problems
-    out["ok"] = not problems
+    out["failed_segments"] = failed
+    # ok = every segment opened and fully checked against the topography, and no
+    # problem found; a partial failure is ok=False even when problems is empty.
+    out["ok"] = not problems and not failed
     out["notes"] = sorted(set(notes))
     return out
 
