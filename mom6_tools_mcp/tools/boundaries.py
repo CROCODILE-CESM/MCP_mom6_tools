@@ -30,8 +30,9 @@ def obc_summary(input_dir: str | None = None, plot: bool = False, out_dir: str |
     lon), the constant coordinate, tracer-point count, levels, number of times,
     first/last time and time step, lon/lat extent, the normal-velocity
     component; vs the model topography (ocean_topog*.nc beside the OBC files,
-    sliced with on_boundary): floor max/mean, wet/land points, and a problem
-    when the OBC levels stop above the sea floor.  Per variable (temp, salt, u,
+    sliced with on_boundary): floor max/mean, wet/land points (`all_land: true`
+    for a closed edge -- not a failure), and a problem when the OBC levels stop
+    above the sea floor.  Per variable (temp, salt, u,
     v, eta) after blanking levels below the floor and land (mask_below_floor --
     OBC files extrapolate every level): min/max/mean, NaN/fill counts where a
     value is expected, and physical-range flags.  Stats use at most `max_times`
@@ -41,8 +42,9 @@ def obc_summary(input_dir: str | None = None, plot: bool = False, out_dir: str |
     Result flags: `problems` lists what is wrong with the OBC data.
     `failed_segments` lists segments whose checks could not fully run, each as
     {segment, file, stage, error, skipped}: stage "open_obc" (file unreadable,
-    nothing checked), "on_boundary" (segment not matched to a topog row/column,
-    e.g. on a rotated grid) or "topog" (no ocean_topog*.nc); for the last two
+    nothing checked), "on_boundary" (segment not matched to a topog row/column:
+    a rotated grid with mom6-tools' lat-lon-only on_boundary, or OBC files made
+    for another grid) or "topog" (no ocean_topog*.nc); for the last two
     the floor checks are skipped and the value ranges cover every level.
     `ok` is True only when every segment was fully checked and `problems` is
     empty, so a partial failure gives ok=False even with no problems.
@@ -75,7 +77,8 @@ def obc_vs_model(hist_dir: str | None = None, casename: str | None = None, input
     interpolated onto the (daily-mean) model times; noleap runs get the OBC
     converted to noleap.  Per segment: bias and RMSE of (model - OBC), max |diff|
     with where/when, an RMSE time series (<= 200 points), and a 3-panel
-    Hovmoller PNG (OBC | model | difference) in `out_dir`.
+    Hovmoller PNG (OBC | model | difference) in `out_dir`.  A segment with no
+    wet points (a closed, all-land edge) gets a `note` and no PNG.
 
     A large, growing RMSE near one boundary usually points at OBC problems
     (wrong sign/orientation, bad nudging/radiation settings, mismatched SSH

@@ -1285,6 +1285,10 @@ def op_obc_summary(a):
                              "floor_mean_wet": _f(np.nanmean(np.where(wetb, fd, np.nan)), 1),
                              "n_wet": int(wetb.sum()), "n_land": int((~wetb).sum()),
                              "boundary_line": floor.attrs.get("boundary_line")})
+                if not wetb.any():
+                    # A closed edge: CrocoDash still writes its segment, but the
+                    # model never uses it. Not a failure.
+                    info["all_land"] = True
                 if info["floor_max"] is not None and info["obc_max_level_depth"] < info["floor_max"]:
                     problems.append(f"segment {sid}: OBC levels stop at {info['obc_max_level_depth']} m but the "
                                     f"sea floor reaches {info['floor_max']} m -- bottom cells get extrapolated values")
@@ -1460,6 +1464,9 @@ def op_obc_vs_model(a):
             idx = _downsample_idx(len(rmse_t))
             r["rmse_series"] = {"time": [_tstr(line.time.values[i]) for i in idx], "rmse": [_f(rmse_t[i], 6) for i in idx]}
             out["segments"][sid] = r
+            if not fin.any():
+                r["note"] = "no wet points to compare (all land in the model, e.g. a closed edge) -- no PNG written"
+                continue
             # Hovmoller: OBC | model | diff
             xn = tb.along_name(seg)
             xv = np.asarray(seg[xn], float)
